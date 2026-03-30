@@ -128,7 +128,7 @@
             <img id="cr-avatar" src="" class="w-10 h-10 rounded-full">
             <div class="flex-grow">
                 <h3 id="cr-name" class="font-bold text-sm">Nama</h3>
-                <p id="cr-status" class="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Mencari Sinyal...</p>
+                <p id="cr-status" class="text-[10px] text-[#00a884] font-bold uppercase tracking-widest">Online</p>
             </div>
             <div class="flex gap-6 text-gray-400">
                 <i class="fa-solid fa-phone cursor-pointer" onclick="call('voice')"></i>
@@ -143,7 +143,7 @@
             </label>
             <input id="cr-input" type="text" placeholder="Ketik pesan..." class="flex-grow bg-[#2a3942] p-3 rounded-2xl outline-none text-sm" oninput="sendTypingStatus()">
             <button onclick="sendMsg()" class="w-12 h-12 bg-[#00a884] rounded-full flex items-center justify-center shadow-lg"><i class="fa-solid fa-paper-plane text-xs"></i></button>
-            <button id="btn-record" onclick="toggleRecording()" class="w-12 h-12 bg-[#2a3942] rounded-full flex items-center justify-center shadow-lg transition-colors">
+            <button id="btn-record" onmousedown="startRecording()" onmouseup="stopRecording()" ontouchstart="startRecording()" ontouchend="stopRecording()" class="w-12 h-12 bg-[#2a3942] rounded-full flex items-center justify-center shadow-lg transition-colors">
                 <i class="fa-solid fa-microphone text-white"></i>
             </button>
         </div>
@@ -190,11 +190,7 @@
         let currentChatPeer = null;
         let mediaRecorder = null;
         let audioChunks = [];
-        let connections = {}; // Menyimpan semua koneksi aktif berdasarkan Peer ID
-        let recordingStream = null;
-        let isRecording = false;
         let currentFacingMode = 'user';
-        let isCallAnswered = false;
 
         // --- CORE LOGIC ---
         function login() {
@@ -219,23 +215,14 @@
             cleanOldMessages(); // Auto-delete 24 Jam
             initPeer();
             renderChatList();
-            window.addEventListener('beforeunload', () => peer.destroy());
-            setInterval(attemptFlushAllPending, 15000); // Cek pesan tertunda tiap 15 detik
-            
-            // Penanganan PWA iOS saat kembali dari layar kunci atau background
-            document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'visible') {
-                    if (peer && peer.disconnected) {
-                        peer.reconnect();
-                    }
-                }
-            });
         }
 
         // iOS PWA Audio & Permission Fix
         function unlockAudio() {
+            const ringtone = document.getElementById('ringtone');
             const notif = document.getElementById('notif-chat');
             const silentPlay = () => {
+                ringtone.play().then(() => { ringtone.pause(); ringtone.currentTime = 0; });
                 notif.play().then(() => { notif.pause(); notif.currentTime = 0; });
                 window.removeEventListener('click', silentPlay);
             };
@@ -256,63 +243,16 @@
                 // Auto-Discovery: Tambahkan ke history jika belum ada
                 if (!chatHistory[senderId]) chatHistory[senderId] = [];
                 
-                connections[senderId] = conn;
-
                 conn.on('data', (data) => {
                     handleIncomingData(senderId, data);
                 });
-                
-                conn.on('open', () => {
-                    if (currentChatPeer === senderId) activeConn = conn;
-                    resendPendingMessages(senderId, conn);
-                });
+                activeConn = conn;
             });
 
             peer.on('call', (call) => {
                 const callerId = call.peer.replace(PREFIX, '');
                 showIncomingCall(callerId, call);
             });
-
-            peer.on('error', (err) => {
-                if (err.type === 'peer-unavailable') {
-                    $('#cr-status').text("OFFLINE").removeClass('text-[#00a884]').addClass('text-rose-500');
-                } else {
-                    console.error("PeerJS Error:", err.type);
-                }
-            });
-        }
-
-        // Fungsi untuk mengecek dan mengirim ulang pesan yang tertahan (pending)
-        function attemptFlushAllPending() {
-            Object.keys(chatHistory).forEach(pid => {
-                const hasPending = chatHistory[pid].some(m => m.side === 'out' && m.status === 'pending');
-                if (hasPending) {
-                    // Jika sedang buka chat orang ini dan sudah online, kirim langsung
-                    if (currentChatPeer === pid && activeConn && activeConn.open) {
-                        resendPendingMessages(pid, activeConn);
-                    } else {
-                        // Coba hubungi di latar belakang untuk mengirim pesan
-                        const tempConn = peer.connect(PREFIX + pid);
-                        tempConn.on('open', () => {
-                            resendPendingMessages(pid, tempConn);
-                            setTimeout(() => tempConn.close(), 3000); // Tutup setelah terkirim
-                        });
-                    }
-                }
-            });
-        }
-
-        function resendPendingMessages(pid, connection) {
-            if (!connection || !connection.open || !chatHistory[pid]) return;
-            let changed = false;
-            chatHistory[pid].forEach(m => {
-                if (m.side === 'out' && m.status === 'pending') {
-                    connection.send({ type: m.type, content: m.msg });
-                    m.status = 'sent';
-                    changed = true;
-                }
-            });
-            if (changed) { saveHistory(); if (currentChatPeer === pid) renderMessages(); renderChatList(); }
         }
 
         // --- AUTO DELETE 24 JAM ---
@@ -333,8 +273,6 @@
 
         // --- CHAT SYSTEM ---
         function handleIncomingData(senderId, data) {
-            if (!data || !data.type) return;
-
             if (data.type === 'call-ended') {
                 stopRingtone();
                 endCall(false); // Tutup layar tanpa kirim sinyal balik
@@ -342,9 +280,7 @@
             }
             if (data.type === 'typing') {
                 if (currentChatPeer === senderId) {
-                    const conn = connections[senderId] || activeConn;
-                    const defaultStatus = (conn && conn.open) ? "Online" : "Offline";
-                    $('#cr-status').text(data.content ? "Sedang mengetik..." : defaultStatus);
+                    $('#cr-status').text(data.content ? "Sedang mengetik..." : "Online");
                     if (data.content) {
                         setTimeout(() => { if(currentChatPeer === senderId) $('#cr-status').text("Online"); }, 3000);
                     }
@@ -352,11 +288,8 @@
                 return;
             }
 
-            // Main Message Handling
-            if (!chatHistory[senderId]) chatHistory[senderId] = [];
-            
-            // Pastikan audio notifikasi dipicu oleh interaksi user sebelumnya (unlockAudio)
             document.getElementById('notif-chat').play();
+            if (!chatHistory[senderId]) chatHistory[senderId] = [];
             
             chatHistory[senderId].push({
                 msg: data.content,
@@ -365,21 +298,13 @@
                 time: Date.now()
             });
             saveHistory();
-            
-            // Jika teman mengirim pesan ke kita, berarti dia Online. 
-            // Coba balas dengan pesan pending kita jika ada.
-            const conn = connections[senderId] || activeConn;
-            if (conn && conn.open && conn.peer === PREFIX + senderId) {
-                resendPendingMessages(senderId, conn);
-            }
-
             renderChatList();
             if (currentChatPeer === senderId) renderMessages();
         }
 
         let typingTimeout;
         function sendTypingStatus() {
-            if (!activeConn || !activeConn.open) return;
+            if (!activeConn) return;
             activeConn.send({ type: 'typing', content: true });
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(() => {
@@ -389,56 +314,35 @@
 
         function sendMsg() {
             const val = $('#cr-input').val().trim();
-            if (!val) return;
+            if (!val || !activeConn) return;
 
-            const isOnline = activeConn && activeConn.open && activeConn.peer === PREFIX + currentChatPeer;
-            if (isOnline) {
-                activeConn.send({ type: 'text', content: val });
-                activeConn.send({ type: 'typing', content: false });
-            }
-            
-            pushToHistory(currentChatPeer, val, 'text', 'out', isOnline ? 'sent' : 'pending');
+            activeConn.send({ type: 'text', content: val });
+            pushToHistory(currentChatPeer, val, 'text', 'out');
+            activeConn.send({ type: 'typing', content: false });
             $('#cr-input').val('');
         }
 
         // --- VOICE NOTE SYSTEM ---
-        function toggleRecording() {
-            if (!isRecording) {
-                startRecording();
-            } else {
-                stopRecording();
-            }
-        }
-
         async function startRecording() {
             try {
-                recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(recordingStream);
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
                 audioChunks = [];
-                isRecording = true;
-                
                 $('#btn-record').addClass('bg-rose-600 animate-pulse');
-                $('#btn-record i').removeClass('fa-microphone').addClass('fa-stop');
-
+                
                 mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
                 mediaRecorder.onstop = () => {
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                     const reader = new FileReader();
                     reader.onloadend = () => {
                         const base64Audio = reader.result;
-                        const isOnline = activeConn && activeConn.open;
-                        if (isOnline) {
+                        if (activeConn) {
                             activeConn.send({ type: 'voice', content: base64Audio });
+                            pushToHistory(currentChatPeer, base64Audio, 'voice', 'out');
                         }
-                        pushToHistory(currentChatPeer, base64Audio, 'voice', 'out', isOnline ? 'sent' : 'pending');
                     };
                     reader.readAsDataURL(audioBlob);
-
-                    // Matikan semua track hardware agar icon mic di iOS mati
-                    if (recordingStream) {
-                        recordingStream.getTracks().forEach(t => t.stop());
-                        recordingStream = null;
-                    }
+                    stream.getTracks().forEach(t => t.stop());
                 };
                 mediaRecorder.start();
             } catch (err) { alert("Izin Mic ditolak"); }
@@ -447,30 +351,25 @@
         function stopRecording() {
             if (mediaRecorder && mediaRecorder.state !== "inactive") {
                 mediaRecorder.stop();
+                $('#btn-record').removeClass('bg-rose-600 animate-pulse');
             }
-            isRecording = false;
-            $('#btn-record').removeClass('bg-rose-600 animate-pulse');
-            $('#btn-record i').removeClass('fa-stop').addClass('fa-microphone');
         }
 
         function sendImg(input) {
-            if (!input.files[0]) return;
+            if (!input.files[0] || !activeConn) return;
             const reader = new FileReader();
             reader.onload = (e) => {
-                const isOnline = activeConn && activeConn.open;
-                if (isOnline) {
-                    activeConn.send({ type: 'img', content: e.target.result });
-                }
-                pushToHistory(currentChatPeer, e.target.result, 'img', 'out', isOnline ? 'sent' : 'pending');
+                activeConn.send({ type: 'img', content: e.target.result });
+                pushToHistory(currentChatPeer, e.target.result, 'img', 'out');
             };
             reader.readAsDataURL(input.files[0]);
         }
 
-        function pushToHistory(peerId, content, type, side, status = 'sent') {
+        function pushToHistory(peerId, content, type, side) {
             if (!chatHistory[peerId]) chatHistory[peerId] = [];
-            chatHistory[peerId].push({ msg: content, type: type, side: side, time: Date.now(), status: status });
+            chatHistory[peerId].push({ msg: content, type: type, side: side, time: Date.now() });
             saveHistory();
-            if (currentChatPeer === peerId) renderMessages();
+            renderMessages();
             renderChatList();
         }
 
@@ -490,7 +389,7 @@
                                 <h4 class="font-bold">${pid.toUpperCase()}</h4>
                                 <span class="text-[10px] text-gray-500">${time}</span>
                             </div>
-                            <p class="text-sm text-gray-500 truncate">${lastChat.type === 'img' ? '📷 Foto' : (lastChat.type === 'voice' ? '🎤 Pesan Suara' : (lastChat.type === 'missed-call' ? '📞 Panggilan Tak Terjawab' : lastChat.msg))}</p>
+                            <p class="text-sm text-gray-500 truncate">${lastChat.type === 'img' ? '📷 Foto' : (lastChat.type === 'voice' ? '🎤 Pesan Suara' : lastChat.msg)}</p>
                         </div>
                     </div>
                 `);
@@ -502,26 +401,12 @@
             $('#chat-room').removeClass('hide');
             $('#cr-name').text(pid.toUpperCase());
             $('#cr-avatar').attr('src', 'https://ui-avatars.com/api/?name='+pid);
-            $('#cr-status').text("Menghubungkan...").removeClass('text-rose-500').addClass('text-gray-500');
             
-            // Tutup koneksi lama jika ada
-            if (activeConn) activeConn.close();
-
-            // Mulai koneksi baru
+            // Connect
             activeConn = peer.connect(PREFIX + pid);
-            connections[pid] = activeConn;
-            
-            activeConn.on('open', () => {
-                $('#cr-status').text("Online").addClass('text-[#00a884]').removeClass('text-gray-500 text-rose-500');
-                resendPendingMessages(pid, activeConn);
-            });
-
+            activeConn.on('open', () => console.log("Connected to " + pid));
             activeConn.on('data', (data) => handleIncomingData(pid, data));
             
-            activeConn.on('close', () => {
-                $('#cr-status').text("Offline").removeClass('text-[#00a884]').addClass('text-gray-500');
-            });
-
             renderMessages();
         }
 
@@ -532,26 +417,20 @@
 
             chatHistory[currentChatPeer].forEach(m => {
                 const time = new Date(m.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                const statusIcon = m.side === 'out' ? (m.status === 'pending' ? '<i class="fa-regular fa-clock text-[8px] ml-1"></i>' : '<i class="fa-solid fa-check-double text-[8px] ml-1 text-sky-400"></i>') : '';
-                
                 if (m.type === 'text') {
                     $box.append(`<div class="chat-${m.side} p-3 max-w-[85%] shadow-md">
                         <p class="text-sm">${m.msg}</p>
-                        <p class="text-[9px] text-right opacity-50 mt-1">${time}${statusIcon}</p>
+                        <p class="text-[9px] text-right opacity-50 mt-1">${time}</p>
                     </div>`);
                 } else if (m.type === 'img') {
                     $box.append(`<div class="chat-${m.side} p-1 max-w-[85%] shadow-md">
                         <img src="${m.msg}" class="rounded-lg max-h-60" onclick="window.open(this.src)">
-                        <p class="text-[9px] text-right opacity-50 mt-1 mr-2 mb-1">${time}${statusIcon}</p>
+                        <p class="text-[9px] text-right opacity-50 mt-1 mr-2 mb-1">${time}</p>
                     </div>`);
                 } else if (m.type === 'voice') {
                     $box.append(`<div class="chat-${m.side} p-3 max-w-[85%] shadow-md">
                         <audio controls class="h-8 w-48"> <source src="${m.msg}" type="audio/webm"> </audio>
-                        <p class="text-[9px] text-right opacity-50 mt-1">${time}${statusIcon}</p>
-                    </div>`);
-                } else if (m.type === 'missed-call') {
-                    $box.append(`<div class="self-center bg-black/20 text-[10px] px-4 py-1 rounded-full text-gray-400 uppercase tracking-widest my-2">
-                        <i class="fa-solid fa-phone-slash mr-2"></i> ${m.msg} (${time})
+                        <p class="text-[9px] text-right opacity-50 mt-1">${time}</p>
                     </div>`);
                 }
             });
@@ -560,7 +439,6 @@
 
         // --- CALL SYSTEM ---
         function showIncomingCall(callerId, call) {
-            isCallAnswered = false;
             const ring = document.getElementById('ringtone');
             ring.play().catch(() => console.log("User interaction needed for audio"));
             $('#call-screen').removeClass('hide');
@@ -589,35 +467,20 @@
         }
 
         async function call(type) {
-            isCallAnswered = false;
             $('#call-screen').removeClass('hide');
             $('#call-name-display').text(currentChatPeer);
             $('#call-avatar-big img').attr('src', 'https://ui-avatars.com/api/?name='+currentChatPeer);
             
-            // Hentikan stream lama jika masih ada untuk menghindari konflik hardware di iOS
-            if (localStream) {
-                localStream.getTracks().forEach(t => t.stop());
-                localStream = null;
-            }
-
             try {
-                // Beri jeda 100ms agar sistem iOS siap setelah transisi layar
-                await new Promise(r => setTimeout(r, 100));
-                
                 localStream = await navigator.mediaDevices.getUserMedia({
                     video: type === 'video' ? { facingMode: currentFacingMode } : false, 
                     audio: true
                 });
-                
                 $('#localVideo')[0].srcObject = localStream;
                 const callObj = peer.call(PREFIX + currentChatPeer, localStream);
                 handleCall(callObj);
                 if (type === 'video') $('#btn-switch-cam').removeClass('hide');
-            } catch (e) { 
-                console.error("Media Error:", e);
-                alert("Kamera/Mic tidak dapat diakses. Jika Anda baru saja membuka layar, silakan coba tekan tombol panggil sekali lagi."); 
-                endCall(); 
-            }
+            } catch (e) { alert("Izin kamera ditolak"); endCall(); }
         }
 
         async function switchCamera() {
@@ -641,7 +504,6 @@
         function handleCall(callObj) {
             currentCall = callObj;
             callObj.on('stream', (remote) => {
-                isCallAnswered = true;
                 $('#remoteVideo').removeClass('hide');
                 $('#remoteVideo')[0].srcObject = remote;
                 $('#call-status').text("TERHUBUNG");
@@ -656,10 +518,6 @@
                 activeConn.send({ type: 'call-ended' });
             }
             
-            if (!isCallAnswered && currentCall) {
-                pushToHistory(currentChatPeer || currentCall.peer.replace(PREFIX, ''), "Panggilan Tak Terjawab", 'missed-call', 'in');
-            }
-
             if (currentCall) currentCall.close();
             if (localStream) localStream.getTracks().forEach(t => t.stop());
             $('#call-screen').addClass('hide');
@@ -670,7 +528,6 @@
 
         // --- HELPERS ---
         function switchPage(page, btn) {
-            if (isRecording) stopRecording();
             $('#view-chats, #view-contacts, #view-profile').addClass('hide');
             $('#view-' + page).removeClass('hide');
             $('.nav-item').removeClass('nav-active').addClass('text-gray-500');
@@ -686,11 +543,7 @@
             $('#friend-id-input').val('');
         }
 
-        function closeChat() { 
-            if (isRecording) stopRecording();
-            $('#chat-room').addClass('hide'); 
-            currentChatPeer = null; 
-        }
+        function closeChat() { $('#chat-room').addClass('hide'); currentChatPeer = null; }
         function saveHistory() { localStorage.setItem('history', JSON.stringify(chatHistory)); }
         function saveProfile() { 
             myProfile.name = $('#p-name').val();
