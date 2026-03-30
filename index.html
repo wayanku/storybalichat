@@ -191,6 +191,7 @@
         let mediaRecorder = null;
         let audioChunks = [];
         let currentFacingMode = 'user';
+        let isCallAnswered = false;
 
         // --- CORE LOGIC ---
         function login() {
@@ -219,10 +220,8 @@
 
         // iOS PWA Audio & Permission Fix
         function unlockAudio() {
-            const ringtone = document.getElementById('ringtone');
             const notif = document.getElementById('notif-chat');
             const silentPlay = () => {
-                ringtone.play().then(() => { ringtone.pause(); ringtone.currentTime = 0; });
                 notif.play().then(() => { notif.pause(); notif.currentTime = 0; });
                 window.removeEventListener('click', silentPlay);
             };
@@ -245,6 +244,9 @@
                 
                 conn.on('data', (data) => {
                     handleIncomingData(senderId, data);
+                });
+                conn.on('open', () => {
+                    resendPendingMessages(senderId);
                 });
                 activeConn = conn;
             });
@@ -312,13 +314,30 @@
             }, 2000);
         }
 
+        function resendPendingMessages(pid) {
+            if (!activeConn || !activeConn.open || !chatHistory[pid]) return;
+            let changed = false;
+            chatHistory[pid].forEach(m => {
+                if (m.side === 'out' && m.status === 'pending') {
+                    activeConn.send({ type: m.type, content: m.msg });
+                    m.status = 'sent';
+                    changed = true;
+                }
+            });
+            if (changed) { saveHistory(); renderMessages(); }
+        }
+
         function sendMsg() {
             const val = $('#cr-input').val().trim();
-            if (!val || !activeConn) return;
+            if (!val) return;
 
-            activeConn.send({ type: 'text', content: val });
-            pushToHistory(currentChatPeer, val, 'text', 'out');
-            activeConn.send({ type: 'typing', content: false });
+            const isOnline = activeConn && activeConn.open;
+            if (isOnline) {
+                activeConn.send({ type: 'text', content: val });
+                activeConn.send({ type: 'typing', content: false });
+            }
+            
+            pushToHistory(currentChatPeer, val, 'text', 'out', isOnline ? 'sent' : 'pending');
             $('#cr-input').val('');
         }
 
@@ -336,10 +355,11 @@
                     const reader = new FileReader();
                     reader.onloadend = () => {
                         const base64Audio = reader.result;
-                        if (activeConn) {
+                        const isOnline = activeConn && activeConn.open;
+                        if (isOnline) {
                             activeConn.send({ type: 'voice', content: base64Audio });
-                            pushToHistory(currentChatPeer, base64Audio, 'voice', 'out');
                         }
+                        pushToHistory(currentChatPeer, base64Audio, 'voice', 'out', isOnline ? 'sent' : 'pending');
                     };
                     reader.readAsDataURL(audioBlob);
                     stream.getTracks().forEach(t => t.stop());
@@ -356,20 +376,23 @@
         }
 
         function sendImg(input) {
-            if (!input.files[0] || !activeConn) return;
+            if (!input.files[0]) return;
             const reader = new FileReader();
             reader.onload = (e) => {
-                activeConn.send({ type: 'img', content: e.target.result });
-                pushToHistory(currentChatPeer, e.target.result, 'img', 'out');
+                const isOnline = activeConn && activeConn.open;
+                if (isOnline) {
+                    activeConn.send({ type: 'img', content: e.target.result });
+                }
+                pushToHistory(currentChatPeer, e.target.result, 'img', 'out', isOnline ? 'sent' : 'pending');
             };
             reader.readAsDataURL(input.files[0]);
         }
 
-        function pushToHistory(peerId, content, type, side) {
+        function pushToHistory(peerId, content, type, side, status = 'sent') {
             if (!chatHistory[peerId]) chatHistory[peerId] = [];
-            chatHistory[peerId].push({ msg: content, type: type, side: side, time: Date.now() });
+            chatHistory[peerId].push({ msg: content, type: type, side: side, time: Date.now(), status: status });
             saveHistory();
-            renderMessages();
+            if (currentChatPeer === peerId) renderMessages();
             renderChatList();
         }
 
@@ -389,7 +412,7 @@
                                 <h4 class="font-bold">${pid.toUpperCase()}</h4>
                                 <span class="text-[10px] text-gray-500">${time}</span>
                             </div>
-                            <p class="text-sm text-gray-500 truncate">${lastChat.type === 'img' ? '📷 Foto' : (lastChat.type === 'voice' ? '🎤 Pesan Suara' : lastChat.msg)}</p>
+                            <p class="text-sm text-gray-500 truncate">${lastChat.type === 'img' ? '📷 Foto' : (lastChat.type === 'voice' ? '🎤 Pesan Suara' : (lastChat.type === 'missed-call' ? '📞 Panggilan Tak Terjawab' : lastChat.msg))}</p>
                         </div>
                     </div>
                 `);
@@ -404,7 +427,9 @@
             
             // Connect
             activeConn = peer.connect(PREFIX + pid);
-            activeConn.on('open', () => console.log("Connected to " + pid));
+            activeConn.on('open', () => {
+                resendPendingMessages(pid);
+            });
             activeConn.on('data', (data) => handleIncomingData(pid, data));
             
             renderMessages();
@@ -417,20 +442,26 @@
 
             chatHistory[currentChatPeer].forEach(m => {
                 const time = new Date(m.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const statusIcon = m.side === 'out' ? (m.status === 'pending' ? '<i class="fa-regular fa-clock text-[8px] ml-1"></i>' : '<i class="fa-solid fa-check-double text-[8px] ml-1 text-sky-400"></i>') : '';
+                
                 if (m.type === 'text') {
                     $box.append(`<div class="chat-${m.side} p-3 max-w-[85%] shadow-md">
                         <p class="text-sm">${m.msg}</p>
-                        <p class="text-[9px] text-right opacity-50 mt-1">${time}</p>
+                        <p class="text-[9px] text-right opacity-50 mt-1">${time}${statusIcon}</p>
                     </div>`);
                 } else if (m.type === 'img') {
                     $box.append(`<div class="chat-${m.side} p-1 max-w-[85%] shadow-md">
                         <img src="${m.msg}" class="rounded-lg max-h-60" onclick="window.open(this.src)">
-                        <p class="text-[9px] text-right opacity-50 mt-1 mr-2 mb-1">${time}</p>
+                        <p class="text-[9px] text-right opacity-50 mt-1 mr-2 mb-1">${time}${statusIcon}</p>
                     </div>`);
                 } else if (m.type === 'voice') {
                     $box.append(`<div class="chat-${m.side} p-3 max-w-[85%] shadow-md">
                         <audio controls class="h-8 w-48"> <source src="${m.msg}" type="audio/webm"> </audio>
-                        <p class="text-[9px] text-right opacity-50 mt-1">${time}</p>
+                        <p class="text-[9px] text-right opacity-50 mt-1">${time}${statusIcon}</p>
+                    </div>`);
+                } else if (m.type === 'missed-call') {
+                    $box.append(`<div class="self-center bg-black/20 text-[10px] px-4 py-1 rounded-full text-gray-400 uppercase tracking-widest my-2">
+                        <i class="fa-solid fa-phone-slash mr-2"></i> ${m.msg} (${time})
                     </div>`);
                 }
             });
@@ -439,6 +470,7 @@
 
         // --- CALL SYSTEM ---
         function showIncomingCall(callerId, call) {
+            isCallAnswered = false;
             const ring = document.getElementById('ringtone');
             ring.play().catch(() => console.log("User interaction needed for audio"));
             $('#call-screen').removeClass('hide');
@@ -467,6 +499,7 @@
         }
 
         async function call(type) {
+            isCallAnswered = false;
             $('#call-screen').removeClass('hide');
             $('#call-name-display').text(currentChatPeer);
             $('#call-avatar-big img').attr('src', 'https://ui-avatars.com/api/?name='+currentChatPeer);
@@ -504,6 +537,7 @@
         function handleCall(callObj) {
             currentCall = callObj;
             callObj.on('stream', (remote) => {
+                isCallAnswered = true;
                 $('#remoteVideo').removeClass('hide');
                 $('#remoteVideo')[0].srcObject = remote;
                 $('#call-status').text("TERHUBUNG");
@@ -518,6 +552,10 @@
                 activeConn.send({ type: 'call-ended' });
             }
             
+            if (!isCallAnswered && currentCall) {
+                pushToHistory(currentChatPeer || currentCall.peer.replace(PREFIX, ''), "Panggilan Tak Terjawab", 'missed-call', 'in');
+            }
+
             if (currentCall) currentCall.close();
             if (localStream) localStream.getTracks().forEach(t => t.stop());
             $('#call-screen').addClass('hide');
