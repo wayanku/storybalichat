@@ -220,6 +220,7 @@
             initPeer();
             renderChatList();
             window.addEventListener('beforeunload', () => peer.destroy());
+            setInterval(attemptFlushAllPending, 15000); // Cek pesan tertunda tiap 15 detik
             
             // Penanganan PWA iOS saat kembali dari layar kunci atau background
             document.addEventListener('visibilitychange', () => {
@@ -279,6 +280,39 @@
                     console.error("PeerJS Error:", err.type);
                 }
             });
+        }
+
+        // Fungsi untuk mengecek dan mengirim ulang pesan yang tertahan (pending)
+        function attemptFlushAllPending() {
+            Object.keys(chatHistory).forEach(pid => {
+                const hasPending = chatHistory[pid].some(m => m.side === 'out' && m.status === 'pending');
+                if (hasPending) {
+                    // Jika sedang buka chat orang ini dan sudah online, kirim langsung
+                    if (currentChatPeer === pid && activeConn && activeConn.open) {
+                        resendPendingMessages(pid, activeConn);
+                    } else {
+                        // Coba hubungi di latar belakang untuk mengirim pesan
+                        const tempConn = peer.connect(PREFIX + pid);
+                        tempConn.on('open', () => {
+                            resendPendingMessages(pid, tempConn);
+                            setTimeout(() => tempConn.close(), 3000); // Tutup setelah terkirim
+                        });
+                    }
+                }
+            });
+        }
+
+        function resendPendingMessages(pid, connection) {
+            if (!connection || !connection.open || !chatHistory[pid]) return;
+            let changed = false;
+            chatHistory[pid].forEach(m => {
+                if (m.side === 'out' && m.status === 'pending') {
+                    connection.send({ type: m.type, content: m.msg });
+                    m.status = 'sent';
+                    changed = true;
+                }
+            });
+            if (changed) { saveHistory(); if (currentChatPeer === pid) renderMessages(); renderChatList(); }
         }
 
         // --- AUTO DELETE 24 JAM ---
