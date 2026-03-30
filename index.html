@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>P2P Messenger PRO</title>
+    <title>StoryBali Cht</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
@@ -38,21 +38,27 @@
     <audio id="notif-chat" src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3"></audio>
 
     <!-- SCREEN 1: LOGIN -->
-    <div id="screen-login" class="fixed inset-0 wa-dark flex flex-col items-center justify-center p-10 z-[300] bg-[#0b141a]">
-        <div class="w-24 h-24 bg-[#00a884] rounded-[2rem] flex items-center justify-center mb-8 shadow-2xl rotate-12">
-            <i class="fa-solid fa-comment-nodes text-white text-5xl -rotate-12"></i>
+    <div id="screen-login" class="fixed inset-0 flex flex-col items-center justify-between p-10 z-[300] bg-[#0b141a]">
+        <div class="flex flex-col items-center mt-20">
+            <div class="w-24 h-24 bg-[#00a884] rounded-full flex items-center justify-center mb-8 shadow-2xl">
+                <i class="fa-solid fa- comment-dots text-white text-5xl"></i>
+            </div>
+            <h1 class="text-3xl font-black mb-2 tracking-tight text-center">Selamat Datang di <br><span class="text-[#00a884]">StoryBali Cht</span></h1>
+            <p class="text-gray-500 text-sm text-center px-4">Pesan pribadi Anda terenkripsi secara P2P. Masukkan nama atau ID unik untuk memulai.</p>
         </div>
-        <h1 class="text-3xl font-black mb-2 tracking-tight">MESSENGER <span class="text-[#00a884]">PRO</span></h1>
-        <p class="text-gray-500 text-sm mb-10 text-center">P2P Encrypted. Chat terhapus otomatis dalam 24 jam.</p>
-        <input id="my-id-input" type="text" placeholder="Username / ID Anda..." class="w-full max-w-xs bg-[#202c33] p-5 rounded-2xl border border-white/5 outline-none focus:border-[#00a884] transition-all text-center font-bold text-xl">
-        <button onclick="login()" class="mt-6 w-full max-w-xs bg-[#00a884] p-5 rounded-2xl font-bold shadow-lg shadow-[#00a884]/20 active:scale-95 transition">MULAI SEKARANG</button>
+        
+        <div class="w-full max-w-xs mb-10 flex flex-col gap-4">
+            <input id="my-id-input" type="text" placeholder="ID Unik (Contoh: budi_bali)" class="w-full bg-[#202c33] p-5 rounded-2xl border border-white/5 outline-none focus:border-[#00a884] transition-all text-center font-bold text-xl">
+            <button onclick="login()" class="w-full bg-[#00a884] p-5 rounded-2xl font-bold shadow-lg active:scale-95 transition">LANJUTKAN</button>
+            <p class="text-[10px] text-gray-600 text-center uppercase tracking-widest">Powered by StoryBali</p>
+        </div>
     </div>
 
     <!-- MAIN APP -->
     <div id="main-app" class="h-screen flex flex-col hide">
         <!-- Header -->
         <header class="h-16 flex items-center justify-between px-6 bg-[#202c33] shadow-lg">
-            <h2 id="page-title" class="text-xl font-bold text-gray-300 tracking-tight">Chat</h2>
+            <h2 id="page-title" class="text-xl font-bold text-[#00a884] tracking-tight">StoryBali Cht</h2>
             <div class="flex gap-6 text-gray-400">
                 <i class="fa-solid fa-camera cursor-pointer hover:text-white"></i>
                 <i class="fa-solid fa-magnifying-glass cursor-pointer hover:text-white"></i>
@@ -122,7 +128,7 @@
             <img id="cr-avatar" src="" class="w-10 h-10 rounded-full">
             <div class="flex-grow">
                 <h3 id="cr-name" class="font-bold text-sm">Nama</h3>
-                <p class="text-[10px] text-[#00a884] font-bold uppercase tracking-widest">Online</p>
+                <p id="cr-status" class="text-[10px] text-[#00a884] font-bold uppercase tracking-widest">Online</p>
             </div>
             <div class="flex gap-6 text-gray-400">
                 <i class="fa-solid fa-phone cursor-pointer" onclick="call('voice')"></i>
@@ -135,8 +141,11 @@
                 <i class="fa-solid fa-paperclip text-xl"></i>
                 <input type="file" class="hidden" accept="image/*" onchange="sendImg(this)">
             </label>
-            <input id="cr-input" type="text" placeholder="Ketik pesan..." class="flex-grow bg-[#2a3942] p-3 rounded-2xl outline-none text-sm">
+            <input id="cr-input" type="text" placeholder="Ketik pesan..." class="flex-grow bg-[#2a3942] p-3 rounded-2xl outline-none text-sm" oninput="sendTypingStatus()">
             <button onclick="sendMsg()" class="w-12 h-12 bg-[#00a884] rounded-full flex items-center justify-center shadow-lg"><i class="fa-solid fa-paper-plane text-xs"></i></button>
+            <button id="btn-record" onmousedown="startRecording()" onmouseup="stopRecording()" ontouchstart="startRecording()" ontouchend="stopRecording()" class="w-12 h-12 bg-[#2a3942] rounded-full flex items-center justify-center shadow-lg transition-colors">
+                <i class="fa-solid fa-microphone text-white"></i>
+            </button>
         </div>
     </div>
 
@@ -145,19 +154,24 @@
         <video id="remoteVideo" autoplay playsinline></video>
         <video id="localVideo" autoplay playsinline muted></video>
         <div class="absolute top-24 text-center">
-            <div id="call-avatar-big" class="w-32 h-32 rounded-full border-4 border-[#00a884] mx-auto mb-6 overflow-hidden">
+            <div id="call-avatar-big" class="w-24 h-24 rounded-full border-4 border-[#00a884] mx-auto mb-4 overflow-hidden">
                 <img src="" class="w-full h-full object-cover">
             </div>
-            <h2 id="call-name-display" class="text-3xl font-black mb-2 uppercase">Nama Teman</h2>
+            <h2 id="call-name-display" class="text-2xl font-black mb-1 uppercase">Nama Teman</h2>
             <p id="call-status" class="text-[#00a884] font-bold tracking-[0.3em] animate-pulse">MEMANGGIL...</p>
         </div>
-        <div class="absolute bottom-20 flex gap-10">
+        <div class="absolute bottom-20 flex flex-col items-center gap-8">
+            <button id="btn-switch-cam" onclick="switchCamera()" class="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md hide">
+                <i class="fa-solid fa-camera-rotate text-white text-xl"></i>
+            </button>
+            <div class="flex gap-10">
             <button onclick="endCall()" class="w-20 h-20 bg-rose-600 rounded-full flex items-center justify-center shadow-2xl hover:bg-rose-500 active:scale-90 transition">
                 <i class="fa-solid fa-phone-slash text-2xl rotate-[135deg]"></i>
             </button>
             <button id="btn-accept" class="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center shadow-2xl hover:bg-emerald-400 active:scale-90 transition hide">
                 <i class="fa-solid fa-phone text-2xl"></i>
             </button>
+            </div>
         </div>
     </div>
 
@@ -174,6 +188,9 @@
         let currentCall = null;
         let localStream = null;
         let currentChatPeer = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let currentFacingMode = 'user';
 
         // --- CORE LOGIC ---
         function login() {
@@ -187,18 +204,36 @@
         }
 
         function startApp() {
-            $('#screen-login').fadeOut();
+            unlockAudio(); // Penting untuk iOS
+            $('#screen-login').addClass('hide');
             $('#main-app').removeClass('hide');
             $('#p-myid').text(myId);
             $('#p-name').val(myProfile.name);
             $('#p-avatar').attr('src', myProfile.avatar || 'https://ui-avatars.com/api/?name='+myId);
             
+            requestInitialPermissions(); // Minta izin di awal sekali saja
             cleanOldMessages(); // Auto-delete 24 Jam
             initPeer();
             renderChatList();
         }
 
-        if (myId) startApp();
+        // iOS PWA Audio & Permission Fix
+        function unlockAudio() {
+            const ringtone = document.getElementById('ringtone');
+            const notif = document.getElementById('notif-chat');
+            const silentPlay = () => {
+                ringtone.play().then(() => { ringtone.pause(); ringtone.currentTime = 0; });
+                notif.play().then(() => { notif.pause(); notif.currentTime = 0; });
+                window.removeEventListener('click', silentPlay);
+            };
+            window.addEventListener('click', silentPlay);
+        }
+
+        function requestInitialPermissions() {
+            navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(s => s.getTracks().forEach(t => t.stop())).catch(e => console.log("Permissions delayed"));
+        }
+
+        if (myId) { startApp(); }
 
         function initPeer() {
             peer = new Peer(PREFIX + myId);
@@ -238,6 +273,21 @@
 
         // --- CHAT SYSTEM ---
         function handleIncomingData(senderId, data) {
+            if (data.type === 'call-ended') {
+                stopRingtone();
+                endCall(false); // Tutup layar tanpa kirim sinyal balik
+                return;
+            }
+            if (data.type === 'typing') {
+                if (currentChatPeer === senderId) {
+                    $('#cr-status').text(data.content ? "Sedang mengetik..." : "Online");
+                    if (data.content) {
+                        setTimeout(() => { if(currentChatPeer === senderId) $('#cr-status').text("Online"); }, 3000);
+                    }
+                }
+                return;
+            }
+
             document.getElementById('notif-chat').play();
             if (!chatHistory[senderId]) chatHistory[senderId] = [];
             
@@ -252,13 +302,57 @@
             if (currentChatPeer === senderId) renderMessages();
         }
 
+        let typingTimeout;
+        function sendTypingStatus() {
+            if (!activeConn) return;
+            activeConn.send({ type: 'typing', content: true });
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                activeConn.send({ type: 'typing', content: false });
+            }, 2000);
+        }
+
         function sendMsg() {
             const val = $('#cr-input').val().trim();
             if (!val || !activeConn) return;
 
             activeConn.send({ type: 'text', content: val });
             pushToHistory(currentChatPeer, val, 'text', 'out');
+            activeConn.send({ type: 'typing', content: false });
             $('#cr-input').val('');
+        }
+
+        // --- VOICE NOTE SYSTEM ---
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                $('#btn-record').addClass('bg-rose-600 animate-pulse');
+                
+                mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64Audio = reader.result;
+                        if (activeConn) {
+                            activeConn.send({ type: 'voice', content: base64Audio });
+                            pushToHistory(currentChatPeer, base64Audio, 'voice', 'out');
+                        }
+                    };
+                    reader.readAsDataURL(audioBlob);
+                    stream.getTracks().forEach(t => t.stop());
+                };
+                mediaRecorder.start();
+            } catch (err) { alert("Izin Mic ditolak"); }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+                $('#btn-record').removeClass('bg-rose-600 animate-pulse');
+            }
         }
 
         function sendImg(input) {
@@ -295,7 +389,7 @@
                                 <h4 class="font-bold">${pid.toUpperCase()}</h4>
                                 <span class="text-[10px] text-gray-500">${time}</span>
                             </div>
-                            <p class="text-sm text-gray-500 truncate">${lastChat.type === 'img' ? '📷 Foto' : lastChat.msg}</p>
+                            <p class="text-sm text-gray-500 truncate">${lastChat.type === 'img' ? '📷 Foto' : (lastChat.type === 'voice' ? '🎤 Pesan Suara' : lastChat.msg)}</p>
                         </div>
                     </div>
                 `);
@@ -328,10 +422,15 @@
                         <p class="text-sm">${m.msg}</p>
                         <p class="text-[9px] text-right opacity-50 mt-1">${time}</p>
                     </div>`);
-                } else {
+                } else if (m.type === 'img') {
                     $box.append(`<div class="chat-${m.side} p-1 max-w-[85%] shadow-md">
                         <img src="${m.msg}" class="rounded-lg max-h-60" onclick="window.open(this.src)">
                         <p class="text-[9px] text-right opacity-50 mt-1 mr-2 mb-1">${time}</p>
+                    </div>`);
+                } else if (m.type === 'voice') {
+                    $box.append(`<div class="chat-${m.side} p-3 max-w-[85%] shadow-md">
+                        <audio controls class="h-8 w-48"> <source src="${m.msg}" type="audio/webm"> </audio>
+                        <p class="text-[9px] text-right opacity-50 mt-1">${time}</p>
                     </div>`);
                 }
             });
@@ -340,7 +439,8 @@
 
         // --- CALL SYSTEM ---
         function showIncomingCall(callerId, call) {
-            document.getElementById('ringtone').play();
+            const ring = document.getElementById('ringtone');
+            ring.play().catch(() => console.log("User interaction needed for audio"));
             $('#call-screen').removeClass('hide');
             $('#btn-accept').removeClass('hide');
             $('#call-name-display').text(callerId);
@@ -349,14 +449,21 @@
 
             $('#btn-accept').off('click').on('click', () => {
                 navigator.mediaDevices.getUserMedia({video: true, audio: true}).then(stream => {
-                    document.getElementById('ringtone').pause();
+                    stopRingtone();
                     localStream = stream;
                     $('#localVideo')[0].srcObject = stream;
                     call.answer(stream);
                     handleCall(call);
                     $('#btn-accept').addClass('hide');
+                    $('#btn-switch-cam').removeClass('hide');
                 });
             });
+        }
+
+        function stopRingtone() {
+            const ring = document.getElementById('ringtone');
+            ring.pause();
+            ring.currentTime = 0;
         }
 
         async function call(type) {
@@ -365,11 +472,33 @@
             $('#call-avatar-big img').attr('src', 'https://ui-avatars.com/api/?name='+currentChatPeer);
             
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({video: type === 'video', audio: true});
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: type === 'video' ? { facingMode: currentFacingMode } : false, 
+                    audio: true
+                });
                 $('#localVideo')[0].srcObject = localStream;
                 const callObj = peer.call(PREFIX + currentChatPeer, localStream);
                 handleCall(callObj);
+                if (type === 'video') $('#btn-switch-cam').removeClass('hide');
             } catch (e) { alert("Izin kamera ditolak"); endCall(); }
+        }
+
+        async function switchCamera() {
+            if (!localStream) return;
+            currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+            
+            const newStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: currentFacingMode },
+                audio: true
+            });
+
+            const videoTrack = newStream.getVideoTracks()[0];
+            const sender = currentCall.peerConnection.getSenders().find(s => s.track.kind === 'video');
+            if (sender) sender.replaceTrack(videoTrack);
+            
+            localStream.getVideoTracks()[0].stop();
+            localStream = newStream;
+            $('#localVideo')[0].srcObject = newStream;
         }
 
         function handleCall(callObj) {
@@ -377,19 +506,24 @@
             callObj.on('stream', (remote) => {
                 $('#remoteVideo').removeClass('hide');
                 $('#remoteVideo')[0].srcObject = remote;
-                $('#call-status').text("LIVE P2P");
+                $('#call-status').text("TERHUBUNG");
                 $('#call-avatar-big').addClass('hide');
             });
             callObj.on('close', endCall);
         }
 
-        function endCall() {
-            document.getElementById('ringtone').pause();
+        function endCall(notifyPeer = true) {
+            stopRingtone();
+            if (notifyPeer && activeConn) {
+                activeConn.send({ type: 'call-ended' });
+            }
+            
             if (currentCall) currentCall.close();
             if (localStream) localStream.getTracks().forEach(t => t.stop());
             $('#call-screen').addClass('hide');
             $('#remoteVideo').addClass('hide')[0].srcObject = null;
             $('#call-avatar-big').removeClass('hide');
+            $('#btn-switch-cam').addClass('hide');
         }
 
         // --- HELPERS ---
