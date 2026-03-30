@@ -128,7 +128,7 @@
             <img id="cr-avatar" src="" class="w-10 h-10 rounded-full">
             <div class="flex-grow">
                 <h3 id="cr-name" class="font-bold text-sm">Nama</h3>
-                <p id="cr-status" class="text-[10px] text-[#00a884] font-bold uppercase tracking-widest">Online</p>
+                <p id="cr-status" class="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Mencari Sinyal...</p>
             </div>
             <div class="flex gap-6 text-gray-400">
                 <i class="fa-solid fa-phone cursor-pointer" onclick="call('voice')"></i>
@@ -216,6 +216,7 @@
             cleanOldMessages(); // Auto-delete 24 Jam
             initPeer();
             renderChatList();
+            window.addEventListener('beforeunload', () => peer.destroy());
         }
 
         // iOS PWA Audio & Permission Fix
@@ -255,6 +256,14 @@
                 const callerId = call.peer.replace(PREFIX, '');
                 showIncomingCall(callerId, call);
             });
+
+            peer.on('error', (err) => {
+                if (err.type === 'peer-unavailable') {
+                    $('#cr-status').text("OFFLINE").removeClass('text-[#00a884]').addClass('text-rose-500');
+                } else {
+                    console.error("PeerJS Error:", err.type);
+                }
+            });
         }
 
         // --- AUTO DELETE 24 JAM ---
@@ -282,7 +291,8 @@
             }
             if (data.type === 'typing') {
                 if (currentChatPeer === senderId) {
-                    $('#cr-status').text(data.content ? "Sedang mengetik..." : "Online");
+                    const defaultStatus = (activeConn && activeConn.open) ? "Online" : "Offline";
+                    $('#cr-status').text(data.content ? "Sedang mengetik..." : defaultStatus);
                     if (data.content) {
                         setTimeout(() => { if(currentChatPeer === senderId) $('#cr-status').text("Online"); }, 3000);
                     }
@@ -300,13 +310,20 @@
                 time: Date.now()
             });
             saveHistory();
+            
+            // Jika teman mengirim pesan ke kita, berarti dia Online. 
+            // Coba balas dengan pesan pending kita jika ada.
+            if (activeConn && activeConn.open && activeConn.peer === PREFIX + senderId) {
+                resendPendingMessages(senderId, activeConn);
+            }
+
             renderChatList();
             if (currentChatPeer === senderId) renderMessages();
         }
 
         let typingTimeout;
         function sendTypingStatus() {
-            if (!activeConn) return;
+            if (!activeConn || !activeConn.open) return;
             activeConn.send({ type: 'typing', content: true });
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(() => {
@@ -314,24 +331,11 @@
             }, 2000);
         }
 
-        function resendPendingMessages(pid) {
-            if (!activeConn || !activeConn.open || !chatHistory[pid]) return;
-            let changed = false;
-            chatHistory[pid].forEach(m => {
-                if (m.side === 'out' && m.status === 'pending') {
-                    activeConn.send({ type: m.type, content: m.msg });
-                    m.status = 'sent';
-                    changed = true;
-                }
-            });
-            if (changed) { saveHistory(); renderMessages(); }
-        }
-
         function sendMsg() {
             const val = $('#cr-input').val().trim();
             if (!val) return;
 
-            const isOnline = activeConn && activeConn.open;
+            const isOnline = activeConn && activeConn.open && activeConn.peer === PREFIX + currentChatPeer;
             if (isOnline) {
                 activeConn.send({ type: 'text', content: val });
                 activeConn.send({ type: 'typing', content: false });
@@ -424,14 +428,25 @@
             $('#chat-room').removeClass('hide');
             $('#cr-name').text(pid.toUpperCase());
             $('#cr-avatar').attr('src', 'https://ui-avatars.com/api/?name='+pid);
+            $('#cr-status').text("Menghubungkan...").removeClass('text-rose-500').addClass('text-gray-500');
             
-            // Connect
+            // Tutup koneksi lama jika ada
+            if (activeConn) activeConn.close();
+
+            // Mulai koneksi baru
             activeConn = peer.connect(PREFIX + pid);
+            
             activeConn.on('open', () => {
+                $('#cr-status').text("Online").addClass('text-[#00a884]').removeClass('text-gray-500 text-rose-500');
                 resendPendingMessages(pid);
             });
+
             activeConn.on('data', (data) => handleIncomingData(pid, data));
             
+            activeConn.on('close', () => {
+                $('#cr-status').text("Offline").removeClass('text-[#00a884]').addClass('text-gray-500');
+            });
+
             renderMessages();
         }
 
